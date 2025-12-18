@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vánoční QR Quest</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+body{font-family:Arial;text-align:center;padding:20px;background:#e6f0ff;}
+button{padding:10px 20px;margin:5px;border-radius:8px;background:#003366;color:#FFD700;border:none;cursor:pointer;}
+button:hover{background:#001f4d;}
+#qr-reader{width:300px;margin:auto;display:none;}
+#clue{margin:15px;padding:10px;background:#fff0f0;border-radius:8px;}
+#dragContainer{display:flex;justify-content:center;flex-wrap:wrap;margin-top:10px;}
+.draggable{margin:5px;padding:5px;border:1px solid #333;border-radius:4px;cursor:grab;}
+.droppable{width:100px;height:100px;margin:5px;border:2px dashed #333;border-radius:8px;display:flex;align-items:center;justify-content:center;}
+input,textarea,select{padding:8px;margin:5px;width:80%;border-radius:6px;border:1px solid #333;}
+.crossword{display:inline-block;margin:20px auto;}
+.crossword-row{display:flex;}
+.crossword-cell{width:40px;height:40px;border:2px solid #333;background:#fff;text-align:center;font-size:20px;font-weight:bold;text-transform:uppercase;box-sizing:border-box;}
+.crossword-cell.empty{border:none;background:transparent;}
+.crossword-cell.secret{background:#FFD700;}
+.crossword-questions{text-align:left;max-width:600px;margin:15px auto;padding:10px;background:#fff;border-radius:8px;}
+.crossword-questions li{margin:8px 0;}
+.secret-input-area{margin-top:20px;}
+/* Responzivní styly */
+@media screen and (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+  
+  h1 {
+    font-size: 24px;
+  }
+  
+  button {
+    padding: 12px 18px;
+    font-size: 16px;
+    width: auto;
+    min-width: 120px;
+  }
+  
+  input, textarea, select {
+    width: 95%;
+    font-size: 16px;
+  }
+  
+  #qr-reader {
+    width: 100%;
+    max-width: 350px;
+  }
+  
+  .crossword {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  
+  .crossword-cell {
+    width: 35px;
+    height: 35px;
+    font-size: 16px;
+  }
+  
+  .crossword-questions {
+    max-width: 95%;
+    font-size: 14px;
+  }
+  
+  textarea {
+    width: 95% !important;
+    height: 250px !important;
+    font-size: 12px !important;
+  }
+  
+  img {
+    max-width: 95% !important;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  h1 {
+    font-size: 20px;
+  }
+  
+  button {
+    padding: 10px 15px;
+    font-size: 14px;
+  }
+  
+  .crossword-cell {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+  }
+  
+  #clue {
+    font-size: 14px;
+  }
+  
+  p, .crossword-questions li {
+    font-size: 14px;
+  }
+}
+</style>
+</head>
+<body>
+<h1>🎄 Vánoční QR Quest</h1>
+
+<div id="setup">
+  <input id="teamName" placeholder="Název týmu"><br>
+  <input id="members" placeholder="Členové (oddělené čárkou)"><br>
+  <button id="startBtn">Start</button>
+</div>
+
+<div id="game" style="display:none;">
+  <p id="teamLabel"></p>
+  <p id="time">⏱ 0:00</p>
+  <div id="clue"></div>
+  <div id="qr-reader"></div>
+  <div id="question"></div>
+</div>
+
+<script>
+// OTÁZKY (15 unikátních)
+const questionPool=[
+  {q:"Otázka 1: Jsem králem mezi drahokamy i sluhou každého školáka. Jaký prvek jsem?",  type:"text", answer:"uhlík"},
+  {q:"Otázka 2: Značky prvků v periodické tabulce obsahují všechna písmena abecedy až na jedno, bez kterého nenapíšete jméno českého nositele Nobelovy ceny za chemii Jaroslava Heyrovského. Jaké je to písmeno?",  type:"text", answer:"j"},
+  {q:"Otázka 3: Jsem symbolem bohatství a luxusu, ale moje chemická značka zní jako výkřik bolesti. Jaký prvek jsem?",  type:"text", answer:"zlato"},
+  {q:"Otázka 4: Napiš počty všech prvků v této sloučenině (odděluj je čárkami):",  type:"formula", answer:"C11,N4,O2,S2,P2,F5,Cl4,H3 ", image:"Vanocni_stromek.png"},
+  {q:"Otázka 5: Napiš typ a podtyp izomerie na obrázku:",  type:"text", answer:"konstituční, skupinová", image: "Izomery.png"},
+  {q:"Otázka 6: Jak se nazývají polohy paží na obrázku?",  type:"text", answer:"připažení, vzpažení, předpažení", image:"Paze.png"},
+  {q:"Otázka 7: Kdy je hráč v ofsajdu?", type:"mc", options:["A) Když stojí sám před brankářem během rohového kopu","B) Když se vrací z ofsajdové pozice a míč mezitím získá jiný hráč","C) Když je při přihrávce blíž k brance soupeře než míč a poslední bránící hráč, a zároveň aktivně zasahuje do hry", "D) Když přijme přihrávku, ale byl v době nahrávky na své vlastní polovině"], answer:"C"},
+  {q:"Otázka 8: Jak se nazývá tento cvik? (napiš celým názvem) ",  type:"text", answer:"výmyk na hrazdě", image: "Vymyk_600x400.png"},
+  {q:"Otázka 9: V tomto kódu je několik chyb – některé syntaktické, jiné logické. Jak má program fungovat:",  type:"code",  bullets: [
+   "Zeptá se na jméno a zda byl uživatel hodný/á.",
+   "Pokud ano, vypíše, že dostane dárek.",
+   "Pokud ne, ověří to znovu – pokud zalže, dostane dárek, pokud řekne „ne“, nedostane nic.",
+   "Pokud napíše něco jiného než „ano/ne“, program odpoví, že nerozumí."
+ ],
+
+ initialCode: `jméno = input("Zadej své jméno: ")
+hodný = input("Byl jsi hodný/á? (ano/ne): ")
+
+if hodny == "ano":
+print(jmeno, "dostane dárek!")
+elif hodny == "ne":
+    opravdune = input("Opravdu jsi nebyl/a hodný/á? (ano/ne): ")
+    if opravdune = "ne"
+        print(jmeno, "dostane dárek!"
+      else:
+        print(jmeno, "letos nedostane nic.")
+else:
+    print("Nerozumím odpovědi.)+
+`, correctCode: `jmeno = input("Zadej své jméno: ")
+hodny = input("Byl jsi hodný/á? (ano/ne): ")
+
+if hodny == "ano":
+    print(jmeno, "dostane dárek!")
+elif hodny == "ne": 
+    opravdune = input("Opravdu jsi nebyl/a hodný/á? (ano/ne): ")
+    if opravdune == "ne":
+        print(jmeno, "letos nedostane nic.") 
+    else:
+        print(jmeno, "dostane dárek!")
+        
+else:
+    print("Nerozumím odpovědi.")
+
+
+`},
+  {q:"Otázka 10: Pavel a Havel nastoupili do práce v různých podnicích, ale se stejným platem. V minulém roce zvýšili Pavlovi plat o 10%, zatímco Havlovi jej o 10% snížili. Letos Pavlovi plat o 10% snížili a Havlovi o 10% zýšili. Kdo z nich dostává nyní vyšší plat?",  type:"mc",  options:["A) Pavlův plat je nižší o 1%, Havlův plat je vyšší o 1%","B) Pavlův plat je vyšší o 1%, Havlův plat je nižší o 1%","C) Platy obou se snížily o 1%", "D) Platy obou se zvýšily o 1%"], answer:"C"},
+  {q:"Otázka 11: Zapiš číslem",  type:"text", answer:"30", image:"20251218_102004.jpg"},
+  {q:"Otázka 12: Co znamená slovo machl. Ve větě: Hospoda je machl, deme jinam.",  type:"text", answer:"zavřeno"},
+  {q:"Otázka 13", type:"crossword", 
+    crosswordData: {
+      grid: [
+        //1
+        [null, {c:'P',s:false, n:1, a:'→', line:'right'}, {c:'O',s:true, n:4, a:'→'}, {c:'S',s:true, a:'→'}, {c:'L',s:false, a:'→'}, {c:'O',s:false, a:'→'}, {c:'U',s:false, a:'→'}, {c:'P',s:true, a:'→'},null, null, null, null],
+        //2
+        [null, null, {c: 'X', s:false}, null, null, null, null, {c: 'N', s:false, a:'↓'}, null, null, null, null],
+        //3
+        [null, null, {c:'E',s:false}, null, null, {c:'T',s:false}, {c:'S',s:false, n:2}, {c:'O',s:false, a:'←'}, null, null, null, null],
+        //4
+        [null, null, {c:'S',s:false},null,null, null, {c:'T',s:false}, null, null, null, null, null],
+        //5
+        [null, {c:'C',s:false, n:5}, {c:'C',s:false}, {c:'C',s:true}, {c:'C',s:false}, null, {c:'R',s:false}, null, null, null, null, null],
+        //6
+        [null, null, {c:'E',s:false}, null,{c:'C',s:true, n:3 },{c:'C',s:false},{c:'I',s:false}, {c:'C',s:false},{c:'C',s:true}, null, null, null],
+        //7
+        [null, null, {c:'E',s:false}, null, null,null, {c:'N',s:false},null, null, null, null,null],
+        //8
+        [null, null, {c:'E',s:false}, null, null, null, {c:'G',s:false}, null, null,null, null,null]
+      ],
+      questions: [
+        " Jakým českým slovem se dá nahradit slovo sekvence?",
+        " Do jakého datového typu vše ukládá příkaz input?",
+        " Jakým obrazcem se zobrazuje proces v počítači?",
+        " Jakým příkazem v Pythonu lze cokoliv vypsat na monitor?",
+        " Jaký znak se používá v Pythonu pro spojení stejných datových typů?",
+        "*Poznámka: Šipky → a ↓ ukazují směr, kterým slovo pokračuje"
+      ],
+      secretWord: "PROCES"
+    }
+  },
+  {q:"Otázka 14: Jak daleko je kótovací čára od obrysu v mm?",  type:"text", answer:"7"},
+  {
+  q:"Otázka 15: Přiřaď ke každému grafu správnou funkci", 
+  type:"graphs", 
+  image: "20251218_102154.jpg",
+  graphs: ["f", "g", "h", "j"],
+  answers: {
+    "f": "H",
+    "g": "K", 
+    "h": "D",
+    "j": "J"
+  }
+}
+];
+
+const middlePlaces=[
+ "Chyť toho, kdo tě nutí, abys přemýšlel algoritmicky","Hledej v místě s velkými dobrotami",
+ "Kde sedí člověk, který stráží vstup k našemu nejvyššímu?","Schovávám se uprostřed všeho dění a všech cest, na místě mezi dvěma oporami",
+ "Další nápovědu najdeš, když půjdeš k východu, ale ve skutečnosti na západ","Běž jíst, ale nikdy tam nedojdi",
+ "Kde visím, zjistíš, až když ti maminka přikáže 'Utři to nádobí!'","Schovávám se na tiskařském stroji, který stojí na spojnici dvou kolmých směrů",
+ "Schovávám se na místě kam i král chodí sám. Toto místo je poblíž sídla tří vašich učitelů. A i přesto, že je to trochu 'VIP' místo, dostanou se tam všichni smrtelníci",
+ "Nápovědu najdeš, když si budeš chtít vychutnat čerstvý lahodný a povzbuzující nápoj s vyhlídkou","Běž chodbou, na jejímž konci září denní světlo a pak sestup co nejníže",
+ "Visím u vchodu do místa, kde úřaduje osoba se jménem vonícím po mase","Čekám tam, kde čekáš před tím, než si protáhneš tělo"
+];
+
+const firstPlace = "Hledej tam, kde ti všechno každý den začíná";
+const lastPlace  = "Jdi za osobou, která bdí nad vaší absencí i prospěchem po všechny 4 roky";
+
+let team={}, startTime, timerInterval, route=[], routeQuestions=[], html5QrCode=null, currentIndex=0, cameraStarted=false;
+
+window.onload = function(){
+  const saved = JSON.parse(localStorage.getItem('qrQuestState'));
+  if(saved){
+    team = saved.team;
+    startTime = new Date(saved.startTime);
+    route = saved.route;
+    routeQuestions = saved.routeQuestions;
+    currentIndex = saved.currentIndex;
+    document.getElementById('setup').style.display='none';
+    document.getElementById('game').style.display='block';
+    document.getElementById('teamLabel').innerText=`Tým: ${team.name} | ${team.members}`;
+    updateClue();
+    timerInterval=setInterval(updateTimer,1000);
+    startScanner();
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+
+function startGame(){
+  const name=document.getElementById('teamName').value.trim();
+  const members=document.getElementById('members').value.trim();
+  if(!name||!members){ alert('Vyplň tým a členy'); return; }
+  team={name:name,members:members};
+  startTime=new Date();
+
+  const shuffledMiddle = shuffle(middlePlaces);
+  route = [firstPlace, ...shuffledMiddle, lastPlace];
+  routeQuestions = shuffle(questionPool).slice(0, route.length);
+
+  currentIndex=0;
+  saveState();
+
+  document.getElementById('setup').style.display='none';
+  document.getElementById('game').style.display='block';
+  document.getElementById('teamLabel').innerText=`Tým: ${team.name} | ${team.members}`;
+  updateClue();
+  timerInterval=setInterval(updateTimer,1000);
+  startScanner();
+}
+
+function saveState(){
+  localStorage.setItem('qrQuestState', JSON.stringify({
+    team, startTime, route, routeQuestions, currentIndex
+  }));
+}
+
+function shuffle(a){return a.slice().sort(()=>Math.random()-0.5);}
+function updateTimer(){
+  const diff=Math.floor((new Date()-startTime)/1000);
+  const m=Math.floor(diff/60), s=diff%60;
+  document.getElementById('time').innerText=`⏱ ${m}:${s.toString().padStart(2,'0')}`;
+}
+
+function updateClue(){
+  if(currentIndex < route.length){
+    document.getElementById('clue').innerText=`Indicie: ${route[currentIndex]}`;
+  } else {
+    document.getElementById('clue').innerText=`🎉 Gratulujeme! Dokončili jste hru!`;
+    clearInterval(timerInterval);
+  }
+}
+
+function startScanner(){
+  const qrReaderDiv=document.getElementById('qr-reader');
+  qrReaderDiv.style.display='block';
+  
+  if(!html5QrCode) {
+    html5QrCode = new Html5Qrcode("qr-reader");
+  }
+  
+  if(cameraStarted) return;
+  
+  cameraStarted = true;
+  
+  // Zapamatování povolení kamery
+  const cameraPermission = localStorage.getItem('cameraPermissionGranted');
+  
+  const config = { 
+    fps: 10, 
+    qrbox: 250,
+    // Pokud už bylo povolení uděleno, neptej se znovu
+    rememberDecision: cameraPermission === 'true'
+  };
+  
+  html5QrCode.start(
+    { facingMode: "environment" },
+    config,
+    onScanSuccess
+  ).then(() => {
+    // Uložit, že kamera byla povolena
+    localStorage.setItem('cameraPermissionGranted', 'true');
+  }).catch(err=>{
+    console.error("Chyba kamery:", err);
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices && devices.length) {
+        html5QrCode.start(
+          devices[0].id,
+          config,
+          onScanSuccess
+        ).then(() => {
+          localStorage.setItem('cameraPermissionGranted', 'true');
+        }).catch(e=>console.error(e));
+      }
+    }).catch(e=>console.error(e));
+  });
+}
+
+function stopScanner(){
+  if(html5QrCode && cameraStarted){
+    html5QrCode.stop().then(()=>{ 
+      document.getElementById('qr-reader').style.display='none'; 
+      cameraStarted = false;
+    }).catch(err=>console.error(err));
+  }
+}
+
+function onScanSuccess(decodedText){
+  const data=JSON.parse(decodedText);
+  const scannedPlace = data.place;
+  const currentPlace = route[currentIndex];
+
+  if(scannedPlace !== currentPlace){
+    alert(`Toto není správné místo! Správně: ${currentPlace}`);
+    return;
+  }
+
+  stopScanner();
+  const question = routeQuestions[currentIndex];
+  showQuestion(scannedPlace, question);
+}
+
+// Opravená funkce showQuestion pro všechny typy otázek
+function showQuestion(place,question){
+  const container = document.getElementById('question');
+  container.innerHTML = ''; // vyčistí obsah před novou otázkou
+ const title = document.createElement('h3');
+title.innerText = question.q.substring(0, question.q.indexOf(':'));
+container.appendChild(title);
+
+const text = document.createElement('p');
+text.innerText = question.q.substring(question.q.indexOf(':') + 1).trim();
+text.style.fontSize = '18px';
+text.style.marginTop = '5px';
+text.style.marginBottom = '15px';
+container.appendChild(text);
+if(question.bullets){
+  const ul = document.createElement('ul');
+  ul.style.textAlign = 'left';
+  ul.style.maxWidth = '600px';
+  ul.style.margin = '10px auto';
+  question.bullets.forEach(bullet => {
+    const li = document.createElement('li');
+    li.innerText = bullet;
+    ul.appendChild(li);
+  });
+  container.appendChild(ul);
+}
+
+if(question.image){
+  const img = document.createElement('img');
+  img.src = question.image;
+  img.style.maxWidth = '80%';
+  img.style.marginTop = '15px';
+  img.style.marginBottom = '15px';
+  img.style.borderRadius = '8px';
+  container.appendChild(img);
+}
+
+  let answered = false;
+
+  if(question.type==="text"){
+    const input=document.createElement('input'); 
+    input.id='answerInput';
+    input.placeholder='Klikni sem a napiš odpověď'; 
+    input.autofocus = true;
+    const btn=document.createElement('button'); 
+    btn.innerText='Odpovědět';
+    btn.onclick=function(){
+      if(answered) return;
+      const ans=input.value.trim().toLowerCase();
+      if(question.answer && ans !== question.answer.toLowerCase()){
+        alert('Špatná odpověď, zkus to znovu!'); 
+        return;
+      }
+      answered=true;
+      container.innerHTML='';
+      currentIndex++;
+      saveState();
+      updateClue();
+      if(currentIndex < route.length) startScanner();
+    };
+    container.appendChild(input); 
+    container.appendChild(btn);
+    setTimeout(()=>{ input.focus(); }, 300);
+  }
+
+  else if(question.type==="formula"){
+    const input=document.createElement('input'); 
+    input.placeholder='Napiš vzorec (např. C2,H6,O1)'; 
+    const btn=document.createElement('button'); 
+    btn.innerText='Odpovědět';
+    btn.onclick=function(){
+      if(answered) return;
+      const parseFormula = (formula) => {
+        const parts = formula.split(',').map(p => p.trim().toUpperCase());
+        const result = {};
+        parts.forEach(part => {
+          const match = part.match(/([A-Z][a-z]?)(\d+)/);
+          if(match) result[match[1]] = parseInt(match[2]);
+        });
+        return result;
+      };
+      const userFormula = parseFormula(input.value);
+      const correctFormula = parseFormula(question.answer);
+      const keys1 = Object.keys(userFormula).sort();
+const keys2 = Object.keys(correctFormula).sort();
+if(keys1.length !== keys2.length || !keys1.every((k,i) => k === keys2[i] && userFormula[k] === correctFormula[k])){
+  alert('Špatný vzorec!'); return;
+
+      }
+      answered=true;
+      container.innerHTML='';
+      currentIndex++;
+      saveState();
+      updateClue();
+      if(currentIndex < route.length) startScanner();
+    };
+    container.appendChild(input); 
+    container.appendChild(btn);
+  }
+
+  else if(question.type==="code"){
+  const textarea=document.createElement('textarea');
+  textarea.value=question.initialCode;
+  textarea.style.width='90%';
+  textarea.style.height='300px';
+  textarea.style.fontFamily='monospace';
+  textarea.style.fontSize='14px';
+  const btn=document.createElement('button');
+  btn.innerText='Ověřit kód';
+  btn.onclick=function(){
+    if(answered) return;
+    const userCode = textarea.value.trim();
+    const correctCode = question.correctCode.trim();
+    if(userCode !== correctCode){
+      alert('Kód není správně opraven!'); return;
+    }
+    answered=true;
+    container.innerHTML='';
+    currentIndex++;
+    saveState();
+    updateClue();
+    if(currentIndex < route.length) startScanner();
+  };
+  container.appendChild(textarea);
+  container.appendChild(document.createElement('br'));
+  container.appendChild(btn);
+}
+ else if(question.type==="mc"){
+    const optionsDiv = document.createElement('div');
+    optionsDiv.style.display = 'flex';
+    optionsDiv.style.flexDirection = 'column';
+    optionsDiv.style.alignItems = 'center';
+    optionsDiv.style.gap = '10px';
+    
+    question.options.forEach(opt=>{
+      const btn=document.createElement('button');
+      btn.innerText=opt;
+      btn.onclick=function(){
+        if(answered) return;
+        if(question.answer && !opt.startsWith(question.answer)){
+          alert('Špatná odpověď, zkus to znovu!'); return;
+        }
+        answered=true;
+        container.innerHTML='';
+        currentIndex++;
+        saveState();
+        updateClue();
+        if(currentIndex < route.length) startScanner();
+      };
+      optionsDiv.appendChild(btn);
+    });
+    container.appendChild(optionsDiv);
+  }
+
+  else if(question.type==="assign"){
+    question.items.forEach(item=>{
+      const btn=document.createElement('button'); 
+      btn.innerText=item;
+      btn.onclick=function(){
+        if(answered) return;
+        if(question.answer && item!==question.answer){
+          alert('Špatné přiřazení, zkus to znovu!'); return;
+        }
+        answered=true;
+        container.innerHTML='';
+        currentIndex++;
+        saveState();
+        updateClue();
+        if(currentIndex < route.length) startScanner();
+      };
+      container.appendChild(btn);
+    });
+  }
+
+  else if(question.type==="graphs"){
+  const graphsDiv = document.createElement('div');
+  graphsDiv.style.display = 'flex';
+  graphsDiv.style.flexDirection = 'column';
+  graphsDiv.style.gap = '15px';
+  graphsDiv.style.alignItems = 'center';
+  graphsDiv.style.marginTop = '20px';
+  
+  question.graphs.forEach(graph => {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+    
+    const label = document.createElement('strong');
+    label.innerText = `Graf ${graph}:`;
+    label.style.fontSize = '18px';
+    
+    const input = document.createElement('input');
+    input.id = `graph-${graph}`;
+    input.placeholder = 'A-L';
+    input.style.width = '80px';
+    input.style.textAlign = 'center';
+    input.maxLength = 1;
+    input.oninput = function(){ this.value = this.value.toUpperCase(); };
+    
+    row.appendChild(label);
+    row.appendChild(input);
+    graphsDiv.appendChild(row);
+  });
+  
+  const btn = document.createElement('button');
+  btn.innerText = 'Odpovědět';
+  btn.onclick = function(){
+    if(answered) return;
+    let allCorrect = true;
+    question.graphs.forEach(graph => {
+      const input = document.getElementById(`graph-${graph}`);
+      const userAns = input.value.trim().toUpperCase();
+      if(userAns !== question.answers[graph].toUpperCase()){
+        allCorrect = false;
+      }
+    });
+    if(!allCorrect){
+      alert('Některé odpovědi jsou špatně, zkus to znovu!');
+      return;
+    }
+    answered = true;
+    container.innerHTML = '';
+    currentIndex++;
+    saveState();
+    updateClue();
+    if(currentIndex < route.length) startScanner();
+  };
+  
+  graphsDiv.appendChild(btn);
+  container.appendChild(graphsDiv);
+}
+
+  else if(question.type==="crossword"){
+    const data = question.crosswordData;
+    
+    // Zobrazení otázek
+    // Zobrazení otázek
+const questionsList = document.createElement('div');
+questionsList.className='crossword-questions';
+const ol = document.createElement('ol');
+data.questions.forEach(q=>{
+  if(q.startsWith('*')){
+    // Poznámka - bez čísla a menší
+    const note = document.createElement('div');
+    note.innerText = q;
+    note.style.fontSize = '12px';
+    note.style.fontStyle = 'italic';
+    note.style.color = '#666';
+    note.style.marginTop = '10px';
+    questionsList.appendChild(note);
+  } else {
+    // Normální otázka
+    const li = document.createElement('li');
+    li.innerText = q;
+    ol.appendChild(li);
+  }
+});
+questionsList.appendChild(ol);
+container.appendChild(questionsList);
+    
+    // Zobrazení mřížky
+   // Zobrazení mřížky
+    const crosswordDiv = document.createElement('div');
+    crosswordDiv.className='crossword';
+    data.grid.forEach((row, r)=>{
+      const rowDiv = document.createElement('div');
+      rowDiv.className='crossword-row';
+      row.forEach((cell, c)=>{
+        const cellDiv = document.createElement('div');
+        cellDiv.style.position = 'relative';
+        cellDiv.style.display = 'inline-block';
+        cellDiv.style.width = '40px';
+        cellDiv.style.height = '40px';
+        
+        const input = document.createElement('input');
+        input.className='crossword-cell';
+        input.maxLength=1;
+        input.style.width='100%';
+        input.style.height='100%';
+        
+        if(cell===null){
+          input.className+=' empty';
+          input.disabled=true;
+        } else {
+          if(cell.s) input.className+=' secret';
+          input.dataset.correct=cell.c;
+          input.oninput=function(){ this.value=this.value.toUpperCase(); };
+          
+          // Přidání čísla
+          if(cell.n){
+            const num = document.createElement('span');
+            num.style.position='absolute';
+            num.style.top='8px';
+            num.style.left='8px';
+            num.style.fontSize='10px';
+            num.style.fontWeight='bold';
+            num.style.pointerEvents='none';
+            num.innerText=cell.n;
+            cellDiv.appendChild(num);
+          }
+          
+          // Přidání šipky
+          if(cell.a){
+            const arrow = document.createElement('span');
+            arrow.style.position='absolute';
+            arrow.style.top='4px';
+            arrow.style.right='4px';
+            arrow.style.fontSize='20px';
+            arrow.style.pointerEvents='none';
+            arrow.style.opacity='0.5';
+            arrow.innerText=cell.a;
+            cellDiv.appendChild(arrow);
+          }
+           // Přidání směrové čáry
+  if(cell.line === 'right'){
+    input.style.borderRight='3px solid #000';
+  }
+  if(cell.line === 'bottom'){
+    input.style.borderBottom='3px solid #000';
+  }
+  if(cell.line === 'left'){
+    input.style.borderLeft='3px solid #000';
+  }
+  if(cell.line === 'top'){
+    input.style.borderTop='3px solid #000';
+  }
+        }
+        
+        cellDiv.appendChild(input);
+        rowDiv.appendChild(cellDiv);
+      });
+      crosswordDiv.appendChild(rowDiv);
+    });
+    container.appendChild(crosswordDiv);
+
+    // Pole pro tajemku
+    const secretDiv = document.createElement('div');
+    secretDiv.className='secret-input-area';
+    secretDiv.innerHTML='<strong>Tajemka (žlutá pole):</strong><br>';
+    const secretInput = document.createElement('input');
+    secretInput.placeholder='Zadej tajné slovo';
+    secretInput.style.width='80%';
+    secretInput.style.maxWidth='300px';
+    const secretBtn = document.createElement('button');
+    secretBtn.innerText='Ověřit tajemku';
+    secretBtn.onclick=function(){
+      if(answered) return;
+      const secret = secretInput.value.trim().toUpperCase();
+      if(secret !== data.secretWord){
+        alert('Špatná tajemka! Zkontroluj žlutá pole.');
+        return;
+      }
+      answered=true;
+      container.innerHTML='';
+      currentIndex++;
+      saveState();
+      updateClue();
+      if(currentIndex < route.length) startScanner();
+    };
+    secretDiv.appendChild(secretInput);
+    secretDiv.appendChild(secretBtn);
+    container.appendChild(secretDiv);
+  }
+}
+
+function hashCode(str){let hash=0; for(let i=0;i<str.length;i++){hash=(hash<<5)-hash+str.charCodeAt(i); hash|=0;} return Math.abs(hash);}
+</script>
+</body>
+</html>
